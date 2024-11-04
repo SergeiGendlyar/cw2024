@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <h2>Вход в систему</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <label for="login">Логин:</label><br>
+        <input type="text" id="login" name="login" required><br><br>
+
+        <label for="password">Пароль:</label><br>
+        <input type="password" id="password" name="password"><br><br>
+
+        <label for="file">Или загрузите фото-ключ:</label><br>
+        <input type="file" name="file" accept="image/*"><br><br>
+
+        <button type="submit">Войти</button>
+    </form>
+</body>
+</html>
