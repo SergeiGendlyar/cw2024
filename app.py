@@ -2,11 +2,12 @@ from flask import Flask, render_template, request, redirect, url_for, session, s
 from PIL import Image
 import os
 
-# непосредственно веб-приложение
 app = Flask(__name__)
-UPLOAD_FOLDER = 'static/uploads'  # Относительный путь к папке загрузок
+
+# Абсолютный путь к папке "uploads" в корневой папке проекта
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # Создаем папку, если ее нет
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.secret_key = 'your_secret_key'
 
 # Настройки пользователей
@@ -30,7 +31,7 @@ def login():
                 return redirect(url_for('dashboard'))
             elif file:
                 # Если загружена фотография, проверяем пароль в фотографии
-                file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+                file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
                 file.save(file_path)
                 extracted_password = extract_password_from_image(file_path)
 
@@ -46,6 +47,8 @@ def login():
 
     return render_template('index.html')
 
+
+# Личный кабинет
 @app.route('/dashboard', methods=['GET', 'POST'])
 def dashboard():
     if 'username' not in session:
@@ -59,18 +62,21 @@ def dashboard():
             if file.filename == '':
                 return "Нет файла"
 
-            # Сохраняем исходное изображение
-            file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
             file.save(file_path)
 
-            # Встраиваем пароль пользователя в изображение и сохраняем его с новым именем
-            output_path = os.path.join(UPLOAD_FOLDER, f"embedded_{file.filename}")
-            embed_password_in_image(file_path, USERS[username], output_path)
+            # Встраиваем пароль пользователя в новое изображение
+            embedded_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"embedded_{file.filename}")
+            embed_password_in_image(file_path, USERS[username], embedded_file_path)
 
-            # Отправляем обратно файл с вложенным паролем
-            return send_file(output_path, mimetype='image/png')
+            # Проверка существования файла перед отправкой
+            if os.path.exists(embedded_file_path):
+                return send_file(embedded_file_path, mimetype='image/png')
+            else:
+                return "Ошибка: файл не найден после встраивания", 404
 
     return render_template('dashboard.html', username=username)
+
 
 # Страница проверки изображения (показывает пароль в фото)
 @app.route('/check_photo', methods=['GET', 'POST'])
@@ -86,7 +92,7 @@ def check_photo():
         if file.filename == '':
             return "Нет файла"
 
-        file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
         file.save(file_path)
 
         extracted_password = extract_password_from_image(file_path)
@@ -95,38 +101,13 @@ def check_photo():
 
     return render_template('check_photo.html')
 
-@app.route('/upload', methods=['GET', 'POST'])
-def upload_file():
-    if request.method == 'POST':
-        if 'file' not in request.files:
-            flash('Нет файла для загрузки')
-            return redirect(request.url)
-
-        file = request.files['file']
-        if file.filename == '':
-            flash('Не выбран файл')
-            return redirect(request.url)
-
-        # Сохраняем файл в `uploads`
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-        file.save(file_path)
-        flash('Файл успешно загружен')
-
-        # Перенаправление или отправка файла в зависимости от логики
-        return redirect(url_for('dashboard', filename=file.filename))
-    return render_template('upload.html')
 
 def embed_password_in_image(image_path, message, output_path):
     image = Image.open(image_path)
     pixels = image.load()
 
-    # Добавляем конечный символ и переводим сообщение в двоичный формат
-    message += '\0'
+    message += '\0'  # Добавляем символ конца строки
     binary_message = ''.join(format(ord(char), '08b') for char in message)
-
-    # Проверка длины сообщения для встраивания
-    if len(binary_message) > image.width * image.height:
-        raise ValueError("Сообщение слишком длинное для данного изображения.")
 
     data_index = 0
     for y in range(image.height):
@@ -134,11 +115,11 @@ def embed_password_in_image(image_path, message, output_path):
             if data_index < len(binary_message):
                 pixel = pixels[x, y]
 
-                if isinstance(pixel, int):  # для градаций серого
+                if isinstance(pixel, int):  # Обработка изображений в режиме "L" (градации серого)
                     pixel = (pixel & ~1) | int(binary_message[data_index])
                     pixels[x, y] = pixel
                 else:
-                    r, g, b = pixel[:3]  # для RGB изображений
+                    r, g, b = pixel[:3]  # Обработка RGB изображений
                     r = (r & ~1) | int(binary_message[data_index])
                     pixels[x, y] = (r, g, b)
 
@@ -147,6 +128,7 @@ def embed_password_in_image(image_path, message, output_path):
                 break
 
     image.save(output_path)
+
 
 def extract_password_from_image(image_path):
     image = Image.open(image_path)
@@ -157,18 +139,18 @@ def extract_password_from_image(image_path):
         for x in range(image.width):
             pixel = pixels[x, y]
 
-            if isinstance(pixel, int):  # для градаций серого
-                r = pixel
+            if isinstance(pixel, int):  # Обработка изображений в режиме "L" (градации серого)
+                r = pixel  # Для изображений в градациях серого пиксель - это одно значение
             else:
-                r, g, b = pixel[:3]  # для RGB изображений
+                r, g, b = pixel[:3]  # Для RGB изображений используем красный канал (r)
 
-            binary_message += str(r & 1)
+            binary_message += str(r & 1)  # Извлекаем младший бит из красного канала или серого значения
 
     message = ''
     for i in range(0, len(binary_message), 8):
         byte = binary_message[i:i+8]
         char = chr(int(byte, 2))
-        if char == '\0':  # Остановка на конечном символе
+        if char == '\0':  # Конец сообщения
             break
         message += char
 
