@@ -46,8 +46,6 @@ def login():
 
     return render_template('index.html')
 
-
-# Личный кабинет
 @app.route('/dashboard', methods=['GET', 'POST'])
 def dashboard():
     if 'username' not in session:
@@ -61,23 +59,18 @@ def dashboard():
             if file.filename == '':
                 return "Нет файла"
 
+            # Сохраняем исходное изображение
             file_path = os.path.join(UPLOAD_FOLDER, file.filename)
             file.save(file_path)
 
-            # Встраиваем пароль пользователя в новое изображение
-            embed_password_in_image(file_path, USERS[username], file_path)
-            filename = request.args.get('filename')
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            try:
-                return send_file(file_path)
-            except FileNotFoundError:
-                return "Файл не найден", 404
+            # Встраиваем пароль пользователя в изображение и сохраняем его с новым именем
+            output_path = os.path.join(UPLOAD_FOLDER, f"embedded_{file.filename}")
+            embed_password_in_image(file_path, USERS[username], output_path)
 
-            return send_file(file_path, mimetype='image/png')
+            # Отправляем обратно файл с вложенным паролем
+            return send_file(output_path, mimetype='image/png')
 
     return render_template('dashboard.html', username=username)
-
-
 
 # Страница проверки изображения (показывает пароль в фото)
 @app.route('/check_photo', methods=['GET', 'POST'])
@@ -102,60 +95,6 @@ def check_photo():
 
     return render_template('check_photo.html')
 
-# @app.route('/upload', methods=['GET', 'POST'])
-# def upload_file():
-#     if request.method == 'POST':
-#         if 'file' not in request.files:
-#             flash('Нет файла для загрузки')
-#             return redirect(request.url)
-#
-#         file = request.files['file']
-#         if file.filename == '':
-#             flash('Не выбран файл')
-#             return redirect(request.url)
-#
-#         # Сохраняем файл в `uploads`
-#         file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-#         file.save(file_path)
-#         flash('Файл успешно загружен')
-#
-#         # Перенаправление или отправка файла в зависимости от логики
-#         return redirect(url_for('dashboard', filename=file.filename))
-#     return render_template('upload.html')
-
-import os
-from flask import Flask, render_template, request, redirect, url_for, send_file, flash
-
-app = Flask(__name__)
-
-# Настройка пути загрузки
-UPLOAD_FOLDER = 'static/uploads'  # Относительный путь к папке загрузок
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-# Убедитесь, что папка `uploads` существует
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
-# @app.route('/upload', methods=['GET', 'POST'])
-# def upload_file():
-#     if request.method == 'POST':
-#         if 'file' not in request.files:
-#             flash('Нет файла для загрузки')
-#             return redirect(request.url)
-#
-#         file = request.files['file']
-#         if file.filename == '':
-#             flash('Не выбран файл')
-#             return redirect(request.url)
-#
-#         # Сохраняем файл в `uploads`
-#         file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-#         file.save(file_path)
-#         flash('Файл успешно загружен')
-#
-#         # Перенаправление или отправка файла в зависимости от логики
-#         return redirect(url_for('dashboard', filename=file.filename))
-#     return render_template('upload.html')
-
 @app.route('/upload', methods=['GET', 'POST'])
 def upload_file():
     if request.method == 'POST':
@@ -177,32 +116,17 @@ def upload_file():
         return redirect(url_for('dashboard', filename=file.filename))
     return render_template('upload.html')
 
-# @app.route('/dashboard')
-# def dashboard():
-#     filename = request.args.get('filename')
-#     file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-#     try:
-#         return send_file(file_path)
-#     except FileNotFoundError:
-#         return "Файл не найден", 404
-@app.route('/dashboard')
-def dashboard():
-    filename = request.args.get('filename')
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    try:
-        return send_file(file_path)
-    except FileNotFoundError:
-        return "Файл не найден", 404
-
-if __name__ == '__main__':
-    app.run(debug=True)
-
 def embed_password_in_image(image_path, message, output_path):
     image = Image.open(image_path)
     pixels = image.load()
 
-    message += '\0'  # Добавляем символ конца строки
+    # Добавляем конечный символ и переводим сообщение в двоичный формат
+    message += '\0'
     binary_message = ''.join(format(ord(char), '08b') for char in message)
+
+    # Проверка длины сообщения для встраивания
+    if len(binary_message) > image.width * image.height:
+        raise ValueError("Сообщение слишком длинное для данного изображения.")
 
     data_index = 0
     for y in range(image.height):
@@ -210,22 +134,19 @@ def embed_password_in_image(image_path, message, output_path):
             if data_index < len(binary_message):
                 pixel = pixels[x, y]
 
-                if isinstance(pixel, int):  # Обработка изображений в режиме "L" (градации серого)
+                if isinstance(pixel, int):  # для градаций серого
                     pixel = (pixel & ~1) | int(binary_message[data_index])
                     pixels[x, y] = pixel
                 else:
-                    r, g, b = pixel[:3]  # Обработка RGB изображений
+                    r, g, b = pixel[:3]  # для RGB изображений
                     r = (r & ~1) | int(binary_message[data_index])
                     pixels[x, y] = (r, g, b)
 
                 data_index += 1
             else:
-                print('')
                 break
 
     image.save(output_path)
-
-
 
 def extract_password_from_image(image_path):
     image = Image.open(image_path)
@@ -236,24 +157,22 @@ def extract_password_from_image(image_path):
         for x in range(image.width):
             pixel = pixels[x, y]
 
-            if isinstance(pixel, int):  # Обработка изображений в режиме "L" (градации серого)
-                r = pixel  # Для изображений в градациях серого пиксель - это одно значение
+            if isinstance(pixel, int):  # для градаций серого
+                r = pixel
             else:
-                r, g, b = pixel[:3]  # Для RGB изображений используем красный канал (r)
+                r, g, b = pixel[:3]  # для RGB изображений
 
-            binary_message += str(r & 1)  # Извлекаем младший бит из красного канала или серого значения
+            binary_message += str(r & 1)
 
     message = ''
     for i in range(0, len(binary_message), 8):
         byte = binary_message[i:i+8]
         char = chr(int(byte, 2))
-        if char == '\0':  # Конец сообщения
+        if char == '\0':  # Остановка на конечном символе
             break
         message += char
 
     return message
-
-
 
 # Выход из системы
 @app.route('/logout')

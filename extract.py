@@ -22,6 +22,6 @@ def extract_password_from_image(image_path):
 
     return message
 
-# Использование
-image_path = 'static/uploads/Shrek_(character).png'  # Замените на имя вашего файла
-print("Извлечённый пароль:", extract_password_from_image(image_path))
+# # Использование
+# image_path = 'static/uploads/Shrek_(character).png'  # Замените на имя вашего файла
+# print("Извлечённый пароль:", extract_password_from_image(image_path))
